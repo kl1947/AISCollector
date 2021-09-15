@@ -1,8 +1,9 @@
 # aiscredentials.py: Passwords etc. separated from Code
-# dj8kl, 2021-09-10
+# dj8kl, 2021-09-15
 
 DEBUG = 0
 SEND_TO_MT = True
+SEND_TO_FM = True
 SEND_TO_APRS = True
 SEND_TO_LOCAL = True
 PRINT_TO_CONSOLE = False
@@ -22,6 +23,11 @@ APRS_CLIENT = '<aprs name>' #ham radio call
 MT_PROTO = 'UDP'
 MT_IP = '5.9.207.224'
 MT_PORT = <MT port>
+
+# fleetmon.com: 148.251.96.197
+FM_PROTO = 'UDP'
+FM_IP = '148.251.96.197'
+FM_PORT = <FM port>
 
 # local output for test purposes
 LOCAL_PROTO = 'TCP'
