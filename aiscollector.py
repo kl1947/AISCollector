@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # aiscollector.py read ais messages, collect (compress) over some time, send to aprs.fi (json) and marinetraffic.com
-# version 0.2
-# Author: dj8kl@dj8kl.de 2021-09-15
+# version 0.3
+# Author: dj8kl@dj8kl.de 2021-09-16
 #
 # this software is freely distributable als long as this copyright part is also provided
 # pyais libary must be available:
@@ -14,9 +14,8 @@
 # aprsColl collects data for aprs.fi over COLLECT_TIME seconds, key is mmsi, type and, if existing, partno of message
 # mtColl collects data for Marinetraffic over COLLECT_TIME seconds, key is the same
 
-# TODO: allow list of output channels
-#       process other than record types 1,2,3,4,5,9,18,19,24,27
-#       more than one local listener
+# TODO: process other than record types 1,2,3,4,5,9,18,19,24,27
+#       allow more than one local listener (use threading)
 
 import platform
 import sys
@@ -29,14 +28,12 @@ import requests
 import pyais
 import serial
 
-from aiscredentials import DEBUG, SEND_TO_MT, SEND_TO_FM, SEND_TO_APRS, SEND_TO_LOCAL, PRINT_TO_CONSOLE,\
-  COLLECT_TIME, NMEA_FILTER, INPUT_PROTO, INPUT_IP, INPUT_PORT, APRS_IP, APRS_CLIENT,\
-  MT_PROTO, MT_IP, MT_PORT, FM_PROTO, FM_IP, FM_PORT, LOCAL_PROTO, LOCAL_IP, LOCAL_PORT
-  
+from aiscredentials2 import DEBUG, SEND_TO_APRS, PRINT_TO_CONSOLE, COLLECT_TIME, NMEA_FILTER, INPUT_PROTO, INPUT_IP, INPUT_PORT, APRS_IP, APRS_CLIENT,\
+  OUT_LIST, SEND_TO_LOCAL, LOCAL_PROTO, LOCAL_IP, LOCAL_PORT
+ 
 # just to make shure, that no obsolete data are sent
 if INPUT_PROTO == 'FIL': 
-  SEND_TO_MT = False
-  SEND_TO_FM = False
+  OUT_LIST = None
   SEND_TO_APRS = False  
 readBuffer = ''
 fail = ''
@@ -74,14 +71,12 @@ def abort(msg): # abort program
 
 class aiscollector():
   def __init__(self):
-    loginf ('Starting aiscollector')
-    self.localPort = None
+    loginf ('Starting aiscollector2')
     self.inputPort = None
-    self.mtPort = None
-    self.fmPort = None
     self.aprsPort = None
+    self.localPort = None
     self.recBuffer = []
-    self.SEND_TO_LOCAL = SEND_TO_LOCAL
+    self.send_to_local = SEND_TO_LOCAL
 
   # open input port 
     fail = ''  
@@ -106,40 +101,29 @@ class aiscollector():
       abort(fail)
       
     # open Output Ports
-    # Marinetraffic Output, UDP or TCP
-    if SEND_TO_MT == True:
-      try:
-        if MT_PROTO == 'UDP':
-          self.mtPort = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-          self.mtPort.bind((MT_IP, MT_PORT))
-          self.mtPort.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        elif MT_PROTO == 'TCP':
-          self.mtPort = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-          self.mtPort.connect((MT_IP, MT_PORT))
-          self.mtPort.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        else:
-          pass
-      except Exception as e:
-        logerr('Error open Marinetraffic port ' + MT_PROTO + ': ' + MT_IP + ':' + str(MT_PORT) + ": " + str(e))
-        
-    # Fleetmon Output, UDP or TCP
-    if SEND_TO_FM == True:
-      try:
-        if FM_PROTO == 'UDP':
-          self.fmPort = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-          self.fmPort.bind((FM_IP, FM_PORT))
-          self.fmPort.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        elif FM_PROTO == 'TCP':
-          self.fmPort = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-          self.fmPort.connect((FM_IP, FM_PORT))
-          self.fmPort.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        else:
-          pass
-      except Exception as e:
-        logerr('Error open Fleetmon port ' + FM_PROTO + ': ' + FM_IP + ':' + str(FM_PORT) + ": " + str(e))
+    self.outChannels = {}
+    for name in OUT_LIST.keys():
+      outParams = OUT_LIST[name]
+      if outParams['ACTIVE']:
+        outPort = None
+        try:
+          if outParams['PROTO'] == 'UDP':
+            outPort = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            outPort.bind((outParams['IP'], outParams['PORT']))
+            outPort.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          elif outParams['PROTO'] == 'TCP':
+            outPort = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            outPort.connect((outParams['IP'], outParams['PORT']))
+            outPort.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          else:
+            pass 
+        except Exception as e:
+          logerr('Error open ' + name + ' ' + outParams['PROTO'] + ': ' + outParams['IP'] + ':' + str(outParams['PORT']) + ": " + str(e))
+      if outPort != None:
+        self.outChannels.update({name: outPort})
 
-    # local port for test or other applications 
-    if self.SEND_TO_LOCAL == True:
+    # local port for test or other applications
+    if self.send_to_local == True:
       try:
         """ #must be moved to a thread
         if LOCAL_PROTO == 'UDP':
@@ -157,14 +141,13 @@ class aiscollector():
           pass   
       except Exception as e:
         logerr('Error open local port ' + LOCAL_PROTO + ': ' + LOCAL_IP + ':' + str(LOCAL_PORT) + ": " + str(e))
-        self.SEND_TO_LOCAL = False
-
+        self.send_to_local = False          
+        
     if SEND_TO_APRS == True:
       self.aprsPort = APRS_IP
 
-   # returns CRC-checked AIS Message with leading '!' or EOF or Null-String
+  # returns CRC-checked AIS Message with leading '!' or EOF or Null-String
   def readData(self):
-    #if len(self.recBuffer) > 0: print ("Has old recbuffer", len(self.recBuffer)) #DEBUG
     if len(self.recBuffer) == 0:
       received = ''
       try:
@@ -202,7 +185,8 @@ class aiscollector():
       return '' # not what I want
 
     #check integrity
-    #received = received[:12] + "*" + received[13:] # simulate error condition
+    #received = received[:12] + "*" + received[13:] # simulate error conditionG400
+    
     try:
       data, chksum = received[1:].split('*')
       calc_chksum = self.calcCheckSum(data)
@@ -264,37 +248,20 @@ class sender (threading.Thread):
     self.data = data
     self.totalCount = z0
     self.compressedCount = z1
-    #print ("*****Thread:", self.id, self.name, self.dest, len(self.data)) #DEBUG
 
   def run(self):
-    if DEBUG > 0:
-      #print ("*****ThreadRunning", self.id, self.name, self.dest, len(self.data)) #DEBUG
-      #loginf (self.name +":" +self.dest + str(self.data))
-      pass
-    if PRINT_TO_CONSOLE:
-      print ('To send to external Port:', self.name, self.totalCount, self.compressedCount, '\r\n', str(self.data))  
     z = 0
-    if self.id == 1:
+    if self.name != 'aprs':
       for i in self.data:
         z += 1
         try:
-          self.dest.sendto(self.data[i].encode('utf-8'), (MT_IP, MT_PORT))          
-          #print ("Sent data to", MT_IP + ":" + str(MT_PORT), "l:", len(self.data), "z:", z, self.data[i]) #DEBUG
+          self.dest.send(self.data[i].encode('utf-8'))
+          # print ("Sent data to", self.name, "z:", z, self.data[i]) #DEBUG
         except Exception as e:
           if e == None: e = ''
-          logerr("ERROR sending data to Marinetraffic: " + str(e))
-          
-    elif self.id == 2:
-      for i in self.data:
-        z += 1
-        try:
-          self.dest.sendto(self.data[i].encode('utf-8'), (FM_IP, FM_PORT))          
-          #print ("Sent data to", MT_IP + ":" + str(MT_PORT), "l:", len(self.data), "z:", z, self.data[i]) #DEBUG
-        except Exception as e:
-          if e == None: e = ''
-          logerr("ERROR sending data to Fleetmon : " + str(e))
+          logerr('ERROR sending data to ' + str(self.dest) + ' ' + str(e))
 
-    elif self.id == 3:
+    elif self.name == 'aprs':
       allmsgs = []
       for i in self.data:
         allmsgs.append(self.data[i])
@@ -339,42 +306,41 @@ if __name__ == "__main__":
   mtColl = {}
   timeout = time.time() + COLLECT_TIME
   rawAis = ''
-  currentLocalPort = None
-  localUDPAddr = None
+  localAddr = None
   
   # from here get messages for ever
   while True:
     while time.time() < timeout:
       rawAis = reader.readData()
-      #print ("Raw Ais:", len(rawAis), rawAis) #DEBUG
+      # print ("Raw Ais:", rawAis) #DEBUG
       if rawAis == 'EOF':
         abort ('EOF reached')
       if rawAis != b'': # else do nothing
-
-        if reader.localPort != None:
+       
+        if reader.send_to_local:
           try:
-            if LOCAL_PROTO == 'UDP':
-              if localUDPAddr == None:
+            if LOCAL_PROTO == 'UDP': # TODO, plus threading for more listeners
+              if localAddr == None:
                 try:
-                  data, localUDPAddr = reader.localPort.recvfrom(256)
+                  data, localAddr = reader.localPort.recvfrom(256)
                   print ("local Port:", LOCAL_PROTO, LOCAL_IP, LOCAL_PORT, rawAis) #DEBUG
                 except Exception as e:
-                  print ("localUDPAddr Error", e)
+                  print ("localAddr Error", e)
                   pass
-              if localUDPAddr != None:
-                reader.localPort.sendto((rawAis + '\r\n').encode(), localUDPAddr)
+                if localAddr != None:
+                  reader.localPort.sendto((rawAis + '\r\n').encode(), localAddr)
             else: # TCP
-              if currentLocalPort == None:
+              if localAddr == None:
                 try:
-                  currentLocalPort, addr = reader.localPort.accept()
+                  currentLocalPort, localAddr = reader.localPort.accept()
                 except:
                   pass
-              if currentLocalPort != None:
-                #print ('Sending: ' + LOCAL_PROTO + ' data to local port ' +  LOCAL_IP + ':' + str(LOCAL_PORT) + ": " + str(e) + '\r\n' + rawAis) #DEBUG               
+              if  localAddr != None:
+                #print ('Sending: ' + LOCAL_PROTO + ' data to local port ' +  LOCAL_IP + ':' + str(LOCAL_PORT) + " (" + localAddr + "): " + str(e) + '\r\n' + rawAis) #DEBUG               
                 currentLocalPort.send((rawAis + '\r\n').encode())
           except Exception as e:
             logerr('ERROR sending ' + LOCAL_PROTO + ' data to local port ' +  LOCAL_IP + ':' + str(LOCAL_PORT) + ": " + str(e))
-            currentLocalPort = None
+            localAddr = None
             
         msg = reader.aisDecode(rawAis)
         #print ("MSG", msg) # DEBUG
@@ -454,21 +420,18 @@ if __name__ == "__main__":
             mtColl.update({mtKey:rawAis}) # latest raw AIS packet for Marinetraffic
 
     if z > 0: # data received in intervall
-      if SEND_TO_MT:
-        mtsender = sender(1, 'marinetraffic.com', reader.mtPort, mtColl.copy(), z, len(mtColl))
-        mtsender.start()
-        if DEBUG > 0: # delay to separate prints
-          while  mtsender.is_alive():
-            time.sleep(.1)
-      if SEND_TO_FM:
-        fmsender = sender(1, 'fleetmon.com', reader.fmPort, mtColl.copy(), z, len(mtColl))
-        fmsender.start()
-        if DEBUG > 0: # delay to separate prints
-          while  fmsender.is_alive():
-            time.sleep(.1)
-          
+      # print ("Ready to Send", reader.outChannels, z, len(mtColl))
+      outCount = 1
+      if len(reader.outChannels) > 0:
+        for outPartner in reader.outChannels.keys():
+          outSender = sender(outCount, outPartner, reader.outChannels.get(outPartner), mtColl.copy(), z, len(mtColl))
+          outSender.start()
+          outCount += 1
+          # delay to separate prints
+          # while outSender.is_alive(): time.sleep(.1) #DEBUG: allow konsistent prints
+  
       if SEND_TO_APRS:
-        apsender = sender(3, 'aprs.fi', APRS_IP, aprsColl.copy(), z, len(mtColl))
+        apsender = sender(outCount, 'aprs.fi', APRS_IP, aprsColl.copy(), z, len(mtColl))
         apsender.start()
 
     # start new collection
@@ -476,6 +439,4 @@ if __name__ == "__main__":
     mtColl.clear()
     timeout = time.time() + COLLECT_TIME
     z = 0
-    if rawAis == 'EOF':
-      loginf ('Full stop: ' + rawAis)
-      sys.exit()
+  # next time loop  
