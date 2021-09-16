@@ -251,7 +251,7 @@ class sender (threading.Thread):
 
   def run(self):
     z = 0
-    if self.name != 'aprs':
+    if self.name != 'aprs.fi':
       for i in self.data:
         z += 1
         try:
@@ -259,9 +259,9 @@ class sender (threading.Thread):
           # print ("Sent data to", self.name, "z:", z, self.data[i]) #DEBUG
         except Exception as e:
           if e == None: e = ''
-          logerr('ERROR sending data to ' + str(self.dest) + ' ' + str(e))
+          logerr('ERROR sending data to ' + self.name + " " + str(self.dest) + ' ' + str(e))
 
-    elif self.name == 'aprs':
+    elif self.name == 'aprs.fi':
       allmsgs = []
       for i in self.data:
         allmsgs.append(self.data[i])
