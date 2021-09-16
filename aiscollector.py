@@ -28,7 +28,7 @@ import requests
 import pyais
 import serial
 
-from aiscredentials2 import DEBUG, SEND_TO_APRS, PRINT_TO_CONSOLE, COLLECT_TIME, NMEA_FILTER, INPUT_PROTO, INPUT_IP, INPUT_PORT, APRS_IP, APRS_CLIENT,\
+from aiscredentials import DEBUG, SEND_TO_APRS, PRINT_TO_CONSOLE, COLLECT_TIME, NMEA_FILTER, INPUT_PROTO, INPUT_IP, INPUT_PORT, APRS_IP, APRS_CLIENT,\
   OUT_LIST, SEND_TO_LOCAL, LOCAL_PROTO, LOCAL_IP, LOCAL_PORT
  
 # just to make shure, that no obsolete data are sent
