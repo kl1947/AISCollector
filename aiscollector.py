@@ -71,7 +71,7 @@ def abort(msg): # abort program
 
 class aiscollector():
   def __init__(self):
-    loginf ('Starting aiscollector2')
+    loginf ('Starting aiscollector')
     self.inputPort = None
     self.aprsPort = None
     self.localPort = None
@@ -431,6 +431,7 @@ if __name__ == "__main__":
           # while outSender.is_alive(): time.sleep(.1) #DEBUG: allow konsistent prints
   
       if SEND_TO_APRS:
+        outCount += 1
         apsender = sender(outCount, 'aprs.fi', APRS_IP, aprsColl.copy(), z, len(mtColl))
         apsender.start()
 
