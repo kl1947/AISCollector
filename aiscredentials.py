@@ -1,64 +1,31 @@
 # aiscredentials.py: Passwords etc. separated from Code
-# dj8kl, 2021-09-15
+# dj8kl, 2021-09-16
 
 DEBUG = 0
-SEND_TO_MT = True
-SEND_TO_FM = True
-SEND_TO_APRS = True
-SEND_TO_LOCAL = True
 PRINT_TO_CONSOLE = False
-COLLECT_TIME = 30 # Intervall vor collction of AIS messages per MMSI
+SEND_TO_APRS = True
+SEND_TO_LOCAL = False
+COLLECT_TIME = 60 # Intervall vor collction of AIS messages per MMSI
                   # Seconds, Standard 60 or 120, Mininum 10
 NMEA_FILTER = ['!AIVDM', '!AIVDO'] # only these NMEA records
 
-INPUT_PROTO = 'SER' #'SER', 'TCP', 'UDP', 'FIL'
-INPUT_IP = '/dev/ttyUais' #'serial port od filename or host name or ip
+INPUT_PROTO = 'SER' #'/root/tmp/nmea2.txt'  #'SER', 'TCP', 'UDP', 'FIL'
+INPUT_IP = '/dev/ttyUais' #'Z:/home/pi/aisRecords.txt' #'rpi3weewx' # or Serial Port or Filename
+                       # '/dev/ttyUais', '/dev/serial0', '~/aistestdata.txt', 192.168.58.24, 'rpi3weewx' 
 INPUT_PORT = 10110 # 
 
 # aprs.fi
-APRS_IP = 'https://aprs.fi/jsonais/post/<provided by aprs.fi>'
-APRS_CLIENT = '<aprs name>' #ham radio call
+APRS_IP = 'https://aprs.fi/jsonais/post/<providedByAprs.fi>'
+APRS_CLIENT = 'dj8kl'
 
-# marinetraffic.com 5.9.207.224 use station dependent port
-MT_PROTO = 'UDP'
-MT_IP = '5.9.207.224'
-MT_PORT = <MT port>
-
-# fleetmon.com: 148.251.96.197
-FM_PROTO = 'UDP'
-FM_IP = '148.251.96.197'
-FM_PORT = <FM port>
-
-# local output for test purposes
+# marinetraffic.com: 5.9.207.224 
+# fleetmon.com: 148.251.96.197 
+OUT_LIST = {
+  'Marinetraffic': {'ACTIVE': True, 'PROTO': 'TCP', 'IP': '5.9.207.224', 'PORT': <port>),
+  'Fleetmon': {'ACTIVE': True, 'PROTO': 'TCP', 'IP': '148.251.96.197', 'PORT': <port>},
+  }
+  
+# local output for test purposes TODO: allow more than one listener
 LOCAL_PROTO = 'TCP'
 LOCAL_IP = '192.168.58.24'
 LOCAL_PORT = 10110
-
-"""
-Further info
-Possible Content of records for aprs.fi
-  {
-  'mmsi':'',
-  'msgtype':0,
-  'partno':0,
-  'lat': 0,
-  'lon': 0,
-  'speed':0,
-  'course':0,
-  'heading':0,
-  'status':0,
-  'shiptype':0,
-  'callsign':'',
-  'imo':'',
-  'shipname':'',
-  'draught':0,
-  'ref_front':0, # 'to_bow':0 'to_stern':0,
-  'to_left':0, # 'to_port':0, 'to_starboard':0
-  'length':0,
-  'width':0,
-  'destination':'',
-  'eta':'', # JJJMMTThhmmss
-  'count':0,
-  'rxtime':'' # reception utc
-  }
-"""
